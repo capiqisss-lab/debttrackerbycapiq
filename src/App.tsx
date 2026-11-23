@@ -1,43 +1,141 @@
-import{useEffect,useState,useRef}from'react';
+import{useEffect,useLayoutEffect,useMemo,useState,useRef}from'react';
 import RealData from './RealData';import{NavLink,Route,Routes,useNavigate,useLocation}from'react-router-dom';import{LayoutGrid,CreditCard,ArrowLeftRight,ChartNoAxesColumn,ChartPie,Database,Users,Settings,HelpCircle,Search,Plus,Send,Sun,Bell,PanelLeftClose,ChevronLeft,ChevronRight,EyeOff,Eye,ShoppingBag,Truck,Coffee,Tag,Home, Zap,Download,Calendar,Shield,Plane,Monitor,Flame,Check,Menu,X,Info,ArrowUpRight,ArrowDownLeft,Star,Wallet,RefreshCw,Lock,MoreHorizontal}from'lucide-react';import{AreaChart,Area,ResponsiveContainer,XAxis,YAxis,CartesianGrid,Tooltip,LineChart,Line,BarChart,Bar}from'recharts';import{transactions,monthly,categories,pots,people,bills,money,type Transaction}from'./mockData';
 
-// Counts numeric dashboard values from zero on page entry and smoothly to updated values.
-function AnimatedValue({value,duration=950}:{value:string,duration?:number}){
- const match=value.match(/^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
- const target=match?Number(match[2].replace(/,/g,'')):NaN;
- const [shown,setShown]=useState(0);
- const last=useRef(0);
- useEffect(()=>{
-  if(!Number.isFinite(target))return;
-  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduce){setShown(target);last.current=target;return;}
-  let raf=0;const start=performance.now(),from=last.current;
-  const tick=(now:number)=>{const t=Math.min(1,(now-start)/duration);const eased=1-Math.pow(1-t,3);setShown(from+(target-from)*eased);if(t<1)raf=requestAnimationFrame(tick);else last.current=target};
-  raf=requestAnimationFrame(tick);return()=>{cancelAnimationFrame(raf);last.current=shown};
- },[target,duration]);
- if(!match||!Number.isFinite(target))return <>{value}</>;
- const decimals=(match[2].split('.')[1]||'').length;
- return <>{match[1]}{shown.toLocaleString('en-US',{minimumFractionDigits:decimals,maximumFractionDigits:decimals})}{match[3]}</>;
+const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
+
+function AnimatedValue({value, duration = 950}: {value: string; duration?: number}) {
+  const match = value.match(/^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
+  const target = match ? Number(match[2].replace(/,/g, '')) : NaN;
+  const decimals = match?.[2].split('.')[1]?.length ?? 0;
+  const prefix = match?.[1] ?? '';
+  const suffix = match?.[3] ?? '';
+  const formatter = useMemo(() => new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+  }), [decimals]);
+  const display = useRef<HTMLSpanElement>(null);
+  const last = useRef(0);
+
+  useLayoutEffect(() => {
+    const node = display.current;
+    if (!node || !Number.isFinite(target)) return;
+    const motion = window.matchMedia(reducedMotionQuery);
+    let frame = 0;
+    const from = last.current;
+    const start = performance.now();
+
+    function render(amount: number) {
+      last.current = amount;
+      const text = prefix + formatter.format(amount) + suffix;
+      if (node?.textContent !== text && node) node.textContent = text;
+    }
+    function tick(now: number) {
+      const progress = Math.min(1, (now - start) / duration);
+      render(progress === 1 ? target : from + (target - from) * (1 - (1 - progress) ** 3));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    }
+    function finish() {
+      cancelAnimationFrame(frame);
+      render(target);
+    }
+    if (motion.matches || from === target) finish();
+    else {
+      render(from);
+      frame = requestAnimationFrame(tick);
+    }
+    function onMotionChange() { if (motion.matches) finish(); }
+    motion.addEventListener('change', onMotionChange);
+    return () => {
+      cancelAnimationFrame(frame);
+      motion.removeEventListener('change', onMotionChange);
+    };
+  }, [target, duration, formatter, prefix, suffix]);
+
+  if (!Number.isFinite(target)) return <>{value}</>;
+  return <><span className="animated-value" ref={display} aria-hidden="true"/><span className="value-label">{value}</span></>;
 }
+
 
 const nav=[['Overview','/overview',LayoutGrid],['Cards','/cards',CreditCard],['Payments','/payments/activity',ArrowLeftRight],['Insights','/insights',ChartNoAxesColumn],['Budgets','/budgets',ChartPie],['Goals','/goals',Database],['Household','/household',Users],['Settings','/settings',Settings],['Your data','/data',Database],['Help','/help',HelpCircle]] as const;
 function IconFor({kind}:{kind:Transaction['icon']}){const I={bag:ShoppingBag,truck:Truck,coffee:Coffee,tag:Tag}[kind];return <span className={'txicon '+kind}><I size={21}/></span>}
 function Toggle({items,value,onChange}:{items:string[],value:string,onChange:(s:string)=>void}){return <div className="seg">{items.map(x=><button key={x} className={x===value?'selected':''} onClick={()=>onChange(x)}>{x}</button>)}</div>}
 function Header({openMenu}:{openMenu:()=>void}){const navTo=useNavigate();return <header className="topbar"><button className="mobile-menu circle" onClick={openMenu}><Menu/></button><div className="searchtop"><Search size={19}/><input placeholder="Search payments, people, pages" onKeyDown={e=>{if(e.key==='Enter')navTo('/payments/activity')}}/><kbd>⌘K</kbd></div><button className="circle mint" onClick={()=>navTo('/payments/send')} aria-label="New payment"><Plus/></button><button className="circle" onClick={()=>navTo('/payments/send')} aria-label="Send money"><Send size={19}/></button><span className="top-divider"/><button className="iconbutton" aria-label="Theme"><Sun/></button><button className="iconbutton notification" aria-label="Notifications"><Bell/><i/></button><button className="avatar" onClick={()=>navTo('/household')}>IO</button></header>}
-function Sidebar({close}:{close:()=>void}){return <aside className="sidebar"><div className="brand"><span className="brandicon">Y</span><div><strong>Verdelo</strong><small>Okafor–Lindqvist home</small></div><button className="collapse" onClick={close}><PanelLeftClose size={17}/></button></div><nav>{nav.map(([name,url,Icon],i)=><div key={name} className={i===7?'nav-separated':''}><NavLink onClick={close} to={url} className={({isActive})=>'navitem '+(isActive||(name==='Payments'&&location.hash.includes('/payments'))?'active':'')}><Icon size={19}/><span>{name}</span>{(name==='Payments'||name==='Budgets')&&<b>{name==='Payments'?1:2}</b>}</NavLink></div>)}</nav><div className="sidebar-bottom"><div className="safe"><small>Safe to spend today</small><strong>$67</strong><small>$269 of bills still due · 19 days left</small></div><div className="userline"><span className="avatar">IO</span><div><strong>Ines Okafor</strong><small>ines@okafor-lindqvist.fa...</small></div><MoreHorizontal size={17}/></div></div></aside>}
+function Sidebar({close}:{close:()=>void}){return <aside className="sidebar"><div className="brand"><span className="brandicon">Y</span><div><strong>Verdelo</strong><small>Okafor–Lindqvist home</small></div><button className="collapse" onClick={close}><PanelLeftClose size={17}/></button></div><nav>{nav.map(([name,url,Icon],i)=><div key={name} className={i===7?'nav-separated':''}><NavLink onClick={close} to={url} className={({isActive})=>'navitem '+(isActive||(name==='Payments'&&location.hash.includes('/payments'))?'active':'')}><Icon size={19}/><span>{name}</span>{(name==='Payments'||name==='Budgets')&&<b>{name==='Payments'?1:2}</b>}</NavLink></div>)}</nav><div className="sidebar-bottom"><div className="safe"><small>Safe to spend today</small><strong><AnimatedValue value="$67"/></strong><small>$269 of bills still due · 19 days left</small></div><div className="userline"><span className="avatar">IO</span><div><strong>Ines Okafor</strong><small>ines@okafor-lindqvist.fa...</small></div><MoreHorizontal size={17}/></div></div></aside>}
 function Panel({children,className=''}:{children:React.ReactNode,className?:string}){return <section className={'panel '+className}>{children}</section>}
 function PageHead({title,sub,action}:{title:string,sub:string,action?:React.ReactNode}){return <div className="pagehead"><div><h1>{title}</h1><p>{sub}</p></div>{action}</div>}
 function Metrics({items}:{items:{label:string,value:string,foot:string,tone?:string}[]}){return <div className="metrics">{items.map((x,i)=><div className={'metric metric'+i} key={x.label}><small>{x.label}</small><strong><AnimatedValue value={x.value}/></strong><span>{x.foot}</span></div>)}</div>}
-function MoneyChart(){const[range,setRange]=useState('Year');return <Panel className="money-panel"><div className="panelhead"><div><h3>Money in & out</h3><p>The last twelve months</p></div><Toggle items={['Quarter','6 months','Year']} value={range} onChange={setRange}/></div><div className="legend"><span><i className="dot green"/>In&nbsp; <b>$123,052</b></span><span><i className="dot gray"/>Out&nbsp; <b>$89,229</b></span><span>Kept&nbsp; <b className="accent">$33,823</b></span></div><div className="chartarea"><ResponsiveContainer width="100%" height="100%"><BarChart key={range} data={range==='Year'?monthly:monthly.slice(range==='Quarter'?-3:-6)} barGap={4} margin={{top:10,right:4,left:-14,bottom:0}}><CartesianGrid stroke="#33463b" strokeDasharray="2 2" vertical={false}/><XAxis dataKey="month" tickLine={false} axisLine={false} tick={{fill:'#aabbb0',fontSize:12}}/><YAxis domain={[0,20000]} ticks={[0,5000,10000,15000,20000]} tickFormatter={v=>v===0?'$0':'$'+v/1000+'k'} tickLine={false} axisLine={false} tick={{fill:'#aabbb0',fontSize:12}}/><Tooltip contentStyle={{background:'#101c16',border:'1px solid #34473b',borderRadius:12,color:'#eef5ef'}} formatter={(v)=>money(Number(v))}/><Bar isAnimationActive animationBegin={90} animationDuration={1050} animationEasing="ease-out" dataKey="in" fill="#67dba0" radius={[10,10,8,8]} maxBarSize={26}/><Bar isAnimationActive animationBegin={180} animationDuration={1150} animationEasing="ease-out" dataKey="out" fill="#87928b" radius={[10,10,8,8]} maxBarSize={26}/></BarChart></ResponsiveContainer></div></Panel>}
+const monthlyRanges: Record<string, typeof monthly> = {Year: monthly, Quarter: monthly.slice(-3), '6 months': monthly.slice(-6)};
+function MoneyChart(){const[range,setRange]=useState('Year');return <Panel className="money-panel"><div className="panelhead"><div><h3>Money in & out</h3><p>The last twelve months</p></div><Toggle items={['Quarter','6 months','Year']} value={range} onChange={setRange}/></div><div className="legend"><span><i className="dot green"/>In&nbsp; <b><AnimatedValue value="$123,052"/></b></span><span><i className="dot gray"/>Out&nbsp; <b><AnimatedValue value="$89,229"/></b></span><span>Kept&nbsp; <b className="accent"><AnimatedValue value="$33,823"/></b></span></div><div className="chartarea"><ResponsiveContainer width="100%" height="100%"><BarChart key={range} data={monthlyRanges[range]} barGap={4} margin={{top:10,right:4,left:-14,bottom:0}}><CartesianGrid stroke="#33463b" strokeDasharray="2 2" vertical={false}/><XAxis dataKey="month" tickLine={false} axisLine={false} tick={{fill:'#aabbb0',fontSize:12}}/><YAxis domain={[0,20000]} ticks={[0,5000,10000,15000,20000]} tickFormatter={v=>v===0?'$0':'$'+v/1000+'k'} tickLine={false} axisLine={false} tick={{fill:'#aabbb0',fontSize:12}}/><Tooltip contentStyle={{background:'#101c16',border:'1px solid #34473b',borderRadius:12,color:'#eef5ef'}} formatter={(v)=>money(Number(v))}/><Bar isAnimationActive={false} dataKey="in" fill="#67dba0" radius={[10,10,8,8]} maxBarSize={26}/><Bar isAnimationActive={false} dataKey="out" fill="#87928b" radius={[10,10,8,8]} maxBarSize={26}/></BarChart></ResponsiveContainer></div></Panel>}
 const balance=Array.from({length:90},(_,i)=>({day:i,value:21500+i*45+Math.sin(i/5)*1000+(i%17<3?3500:0)+(i%31===0?2200:0)}));
-function BalanceChart(){const[range,setRange]=useState('90 days');return <Panel><div className="panelhead"><div><h3>Balance over time</h3><p>The joint account at the end of each day</p></div><Toggle items={['30 days','90 days','Year']} value={range} onChange={setRange}/></div><div className="chartarea tall"><ResponsiveContainer width="100%" height="100%"><AreaChart key={range} data={range==='30 days'?balance.slice(-30):balance} margin={{top:20,right:5,left:-5,bottom:0}}><defs><linearGradient id="balancefill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#67dba0" stopOpacity={.28}/><stop offset="100%" stopColor="#67dba0" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#34443b" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="day" tickFormatter={v=>'Aug '+(14+Number(v))} tick={{fontSize:11,fill:'#aabbb0'}} tickLine={false} axisLine={false} minTickGap={38}/><YAxis domain={[20000,40000]} ticks={[20000,25000,30000,35000,40000]} tickFormatter={v=>'$'+(v/1000)+'k'} tick={{fontSize:12,fill:'#aabbb0'}} tickLine={false} axisLine={false}/><Tooltip contentStyle={{background:'#101c16',border:'1px solid #34473b',borderRadius:12}} formatter={v=>money(Number(v))}/><Area isAnimationActive animationDuration={1300} animationEasing="ease-out" type="monotone" dataKey="value" stroke="#6fe2a7" fill="url(#balancefill)" strokeWidth={2.5} dot={false}/></AreaChart></ResponsiveContainer></div></Panel>}
+const recentBalance = balance.slice(-30);
+const miniBalance = balance.slice(0,45);
+function BalanceChart(){const[range,setRange]=useState('90 days');return <Panel><div className="panelhead"><div><h3>Balance over time</h3><p>The joint account at the end of each day</p></div><Toggle items={['30 days','90 days','Year']} value={range} onChange={setRange}/></div><div className="chartarea tall"><ResponsiveContainer width="100%" height="100%"><AreaChart key={range} data={range==='30 days'?recentBalance:balance} margin={{top:20,right:5,left:-5,bottom:0}}><defs><linearGradient id="balancefill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#67dba0" stopOpacity={.28}/><stop offset="100%" stopColor="#67dba0" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#34443b" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="day" tickFormatter={v=>'Aug '+(14+Number(v))} tick={{fontSize:11,fill:'#aabbb0'}} tickLine={false} axisLine={false} minTickGap={38}/><YAxis domain={[20000,40000]} ticks={[20000,25000,30000,35000,40000]} tickFormatter={v=>'$'+(v/1000)+'k'} tick={{fontSize:12,fill:'#aabbb0'}} tickLine={false} axisLine={false}/><Tooltip contentStyle={{background:'#101c16',border:'1px solid #34473b',borderRadius:12}} formatter={v=>money(Number(v))}/><Area isAnimationActive={false} type="monotone" dataKey="value" stroke="#6fe2a7" fill="url(#balancefill)" strokeWidth={2.5} dot={false}/></AreaChart></ResponsiveContainer></div></Panel>}
 function PaymentsList({limit}:{limit?:number}){const rows=limit?transactions.slice(0,limit):transactions;return <div className="transactions">{rows.map((t,i)=><div className="transaction" key={i}><IconFor kind={t.icon}/><div className="txdetails"><strong>{t.name}</strong><small>{limit?(i<3?`${i===0?'1h':'2 h'} ago`:'Yesterday')+' · ':t.when+' · '}{t.category} · {t.person}{!limit?' · '+t.card:''}</small></div><b>−{money(Math.abs(t.amount))}</b></div>)}</div>}
 function SpendingPanel(){return <Panel className="spending"><div className="panelhead"><div><h3>Where November went</h3><p>12 of 30 days in · $4,951 spent</p></div><a href="#/insights">Details</a></div><div className="stackbar">{categories.map(x=><span key={x.name} style={{width:x.pct+'%',background:x.color}}/>)}</div>{categories.map((x,i)=><div className="categoryrow" key={x.name}><span className="categoryicon">{[<Home/>,<ShoppingBag/>,<Tag/>,<Coffee/>,<Zap/>][i]}</span><strong>{x.name}</strong><small>{x.pct}%</small><b><AnimatedValue value={money(x.amount)}/></b></div>)}<div className="infobox"><Info size={18}/>At this pace November ends near <b>$8,091</b> — October was $6,944.</div></Panel>}
 function Bills(){return <Panel><div className="panelhead"><div><h3>Coming up</h3><p>Bills in the next weeks</p></div><a href="#/payments/bills">All bills</a></div>{bills.map(b=><div className="billrow" key={b.day}><span className="datebox"><strong>{b.day}</strong><small>Nov</small></span><div><strong>{b.name}</strong><small>{b.detail}</small></div><b>{money(b.amount)}</b></div>)}</Panel>}
 function QuickSend(){const[person,setPerson]=useState('Jonas');const[amount,setAmount]=useState(50);const[done,setDone]=useState(false);return <Panel><h3>Quick send</h3><p>Arrives instantly in Verdelo</p><div className="quickpeople">{[['Jonas','JL'],['Ada','AL'],['Chidi','CO'],['Marisol','MP']].map(([name,initials])=><button className={person===name?'picked':''} key={name} onClick={()=>{setPerson(name);setDone(false)}}><span>{initials}</span>{name}</button>)}</div><div className="amounts">{[20,50,100].map(n=><button key={n} className={amount===n?'selected':''} onClick={()=>setAmount(n)}>${n}</button>)}<button onClick={()=>{const v=prompt('Amount in dollars');if(v&&Number(v)>0)setAmount(Number(v))}}>Other...</button></div><button className="primary full" onClick={()=>setDone(true)}><Send size={17}/>{done?`Sent ${money(amount)} to ${person}`:`Send ${money(amount)} to ${person}`}</button></Panel>}
 function Noticed(){const[index,setIndex]=useState(0);return <Panel><div className="panelhead"><h3>✳ &nbsp;Noticed</h3><div className="arrows"><button onClick={()=>setIndex((index+3)%4)}><ChevronLeft/></button><button onClick={()=>setIndex((index+1)%4)}><ChevronRight/></button></div></div><p>{index+1} of 4</p><div className="noticeicon"><RefreshCw/></div><h3>{['$1,068 a year on subscriptions','Your savings are growing','Keep an eye on bills','November spending'][index]}</h3><p>Streamly, Fulcrum Gym, Tune Box. Skip one from Bills if it’s not earning its keep.</p><a href="#/payments/bills">Review bills →</a><div className="noticeprogress"><span style={{marginLeft:(index*25)+'%'}}/></div></Panel>}
-function CardPanel(){const[idx,setIdx]=useState(0);const[swap,setSwap]=useState(0);const[direction,setDirection]=useState(1);function switchCard(dir:number){setDirection(dir);setSwap(v=>v+1);setIdx(v=>(v+dir+3)%3);setFlip(false)}const[flip,setFlip]=useState(false);const[frozen,setFrozen]=useState(false);const cards=[['Everyday','4182','Ines Okafor','09/29'],['Travel','7730','Jonas Lindqvist','08/29'],["Ada’s card",'2056','Ada Lindqvist','11/28']];return <Panel className="cards-panel"><div className="panelhead"><div><h3>Cards</h3><p>Throw the top card aside, or tap it to turn it over</p></div><a href="#/cards">All cards</a></div><div className="cardstage"><div className="backcard one"/><div className="backcard two"/><button key={swap} aria-label={flip?'Show card front':'Flip card to back'} className={'bankcard card-swap '+(direction<0?'swap-left ':'swap-right ')+(flip?'flipped':'')} onClick={()=>setFlip(v=>!v)}><span className="card-rotator"><span className="card-face card-front"><strong>{cards[idx][0]}</strong><span className="contactless">◖)))</span><span className="chip">▤</span><span className="cardnumber">••••  ••••  ••••  {cards[idx][1]}</span><span className="cardmeta"><span><small>Holder</small>{cards[idx][2]}</span><span><small>Exp</small>{cards[idx][3]}</span></span></span><span className="card-face card-back"><span className="magnetic-strip"/><span className="signature-strip">VERDELO <span>•••</span></span><strong>Verdelo</strong><small>Tap to flip back</small></span></span></button></div><div className="cardcontrols"><button className="round" onClick={()=>switchCard(-1)}><ChevronLeft/></button><div className="dots">{cards.map((_,i)=><i className={i===idx?'on':''} key={i}/>)}</div><button className="round" onClick={()=>switchCard(1)}><ChevronRight/></button><span className="grow"/><button className="round" onClick={()=>setFlip(!flip)}><CreditCard size={17}/></button><button className="smallbutton" onClick={()=>setFrozen(!frozen)}>{frozen?'Unfreeze':'❄  Freeze'}</button></div><div className="cardfoot"><div><span>Everyday · this month</span><strong>$1,393.11 <small>of $3,200</small></strong></div><div className="progress"><span style={{width:'43.5%'}}/></div><div className="pills"><span>● {frozen?'Frozen':'Live'}</span><span>Online on</span><span>Abroad on</span></div></div></Panel>}
-function Overview(){return <><PageHead title="Overview" sub="What the household earns, keeps and spends — and where it goes."/><div className="overview-top"><CardPanel/><div className="overview-right"><Panel className="balance-panel"><div className="panelhead"><div><h3>Joint balance</h3><p>Everyday account · ···· 0457</p></div><EyeOff size={19}/></div><div className="balance-row"><div><strong><AnimatedValue value="$24,935.57" duration={1250}/></strong><p><span className="positive">↑ 3.8%</span></p><small>against a month ago</small></div><div className="balance-stats">{[['Today','$95'],['This week','$516'],['This month','$4,951'],['This year','$81,740']].map(x=><div key={x[0]}><small>{x[0]}</small><b><AnimatedValue value={x[1]}/></b></div>)}</div></div><div className="mini-balance"><ResponsiveContainer width="100%" height="100%"><AreaChart data={balance.slice(0,45)}><defs><linearGradient id="smallFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#65dba0" stopOpacity=".18"/><stop offset="1" stopColor="#65dba0" stopOpacity="0"/></linearGradient></defs><Area isAnimationActive animationDuration={1100} animationEasing="ease-out" dataKey="value" stroke="#65dba0" strokeWidth={2.5} fill="url(#smallFill)" dot={false}/></AreaChart></ResponsiveContainer></div><div className="legend"><span>━ Balance</span><span>┄ Forecast</span><span>🟢 Payday</span><span>🟡 Bill</span><span className="grow"/><span>Nov 30&nbsp; <b>$29,321</b></span></div></Panel><MoneyChart/></div></div><div className="overview-bottom"><SpendingPanel/><Panel><div className="panelhead"><div><h3>Latest payments</h3><p>Everyone, every card</p></div><a href="#/payments/activity">See all</a></div><PaymentsList/></Panel><div className="rightstack"><Noticed/><QuickSend/><Bills/></div></div></>}
+const cards = [
+  ['Everyday', '4182', 'Ines Okafor', '09/29'],
+  ['Travel', '7730', 'Jonas Lindqvist', '08/29'],
+  ["Ada’s card", '2056', 'Ada Lindqvist', '11/28'],
+];
+
+function CardFaces({index, flipped}: {index: number; flipped: boolean}) {
+  const [name, number, holder, expiry] = cards[index];
+  return <span className={'card-rotator' + (flipped ? ' flipped' : '')}>
+    <span className="card-face card-front" aria-hidden={flipped}>
+      <strong>{name}</strong><span className="contactless">◖)))</span><span className="chip">▤</span>
+      <span className="cardnumber">••••  ••••  ••••  {number}</span>
+      <span className="cardmeta"><span><small>Holder</small>{holder}</span><span><small>Exp</small>{expiry}</span></span>
+    </span>
+    <span className="card-face card-back" aria-hidden={!flipped}>
+      <span className="magnetic-strip"/><span className="signature-strip">VERDELO <span>•••</span></span>
+      <strong>Verdelo</strong><small>Tap to flip back</small>
+    </span>
+  </span>;
+}
+
+function CardPanel() {
+  const [index, setIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [frozen, setFrozen] = useState(false);
+  const [swap, setSwap] = useState<{index: number; flipped: boolean; direction: number; id: number}>();
+  const sequence = useRef(0);
+  const flipCard = () => setFlipped(value => !value);
+
+  function switchCard(direction: number) {
+    setSwap(window.matchMedia(reducedMotionQuery).matches ? undefined :
+      {index, flipped, direction, id: ++sequence.current});
+    setIndex(value => (value + direction + cards.length) % cards.length);
+    setFlipped(false);
+  }
+
+  return <Panel className="cards-panel">
+    <div className="panelhead"><div><h3>Cards</h3><p>Use the arrows to swap cards, or tap the card to turn it over</p></div><a href="#/cards">All cards</a></div>
+    <div className="cardstage">
+      <div className="backcard one"/><div className="backcard two"/>
+      {swap && <span key={swap.id} aria-hidden="true" className={'bankcard card-exit' + (swap.direction < 0 ? ' swap-left' : '')}
+        onAnimationEnd={() => setSwap(current => current?.id === swap.id ? undefined : current)}>
+        <CardFaces index={swap.index} flipped={swap.flipped}/>
+      </span>}
+      <button type="button" className="bankcard" aria-label={cards[index][0] + (flipped ? ': show front' : ': show back')} onClick={flipCard}>
+        <span key={index} className={'card-arrival' + (swap ? ' card-enter' : '') + (swap?.direction === -1 ? ' swap-left' : '')}>
+          <CardFaces index={index} flipped={flipped}/>
+        </span>
+      </button>
+    </div>
+    <div className="cardcontrols">
+      <button className="round" aria-label="Previous card" onClick={() => switchCard(-1)}><ChevronLeft/></button>
+      <div className="dots">{cards.map((card, i) => <i className={i === index ? 'on' : ''} key={card[1]}/>)}</div>
+      <button className="round" aria-label="Next card" onClick={() => switchCard(1)}><ChevronRight/></button>
+      <span className="grow"/><button className="round" aria-label="Flip card" onClick={flipCard}><CreditCard size={17}/></button>
+      <button className="smallbutton" onClick={() => setFrozen(value => !value)}>{frozen ? 'Unfreeze' : '❄  Freeze'}</button>
+    </div>
+    <div className="cardfoot"><div><span>Everyday · this month</span><strong><AnimatedValue value="$1,393.11"/> <small>of $3,200</small></strong></div>
+      <div className="progress"><span style={{width:'43.5%'}}/></div><div className="pills"><span>● {frozen ? 'Frozen' : 'Live'}</span><span>Online on</span><span>Abroad on</span></div></div>
+  </Panel>;
+}
+function Overview(){return <><PageHead title="Overview" sub="What the household earns, keeps and spends — and where it goes."/><div className="overview-top"><CardPanel/><div className="overview-right"><Panel className="balance-panel"><div className="panelhead"><div><h3>Joint balance</h3><p>Everyday account · ···· 0457</p></div><EyeOff size={19}/></div><div className="balance-row"><div><strong><AnimatedValue value="$24,935.57" duration={1250}/></strong><p><span className="positive">↑ 3.8%</span></p><small>against a month ago</small></div><div className="balance-stats">{[['Today','$95'],['This week','$516'],['This month','$4,951'],['This year','$81,740']].map(x=><div key={x[0]}><small>{x[0]}</small><b><AnimatedValue value={x[1]}/></b></div>)}</div></div><div className="mini-balance"><ResponsiveContainer width="100%" height="100%"><AreaChart data={miniBalance}><defs><linearGradient id="smallFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#65dba0" stopOpacity=".18"/><stop offset="1" stopColor="#65dba0" stopOpacity="0"/></linearGradient></defs><Area isAnimationActive={false} dataKey="value" stroke="#65dba0" strokeWidth={2.5} fill="url(#smallFill)" dot={false}/></AreaChart></ResponsiveContainer></div><div className="legend"><span>━ Balance</span><span>┄ Forecast</span><span>🟢 Payday</span><span>🟡 Bill</span><span className="grow"/><span>Nov 30&nbsp; <b>$29,321</b></span></div></Panel><MoneyChart/></div></div><div className="overview-bottom"><SpendingPanel/><Panel><div className="panelhead"><div><h3>Latest payments</h3><p>Everyone, every card</p></div><a href="#/payments/activity">See all</a></div><PaymentsList/></Panel><div className="rightstack"><Noticed/><QuickSend/><Bills/></div></div></>}
 function Insights(){const[tab,setTab]=useState('In & out');return <><PageHead title="Insights" sub="What the household earns, keeps and spends — and where it goes."/><div className="tabs">{['In & out','Spending','Merchants'].map(t=><button className={tab===t?'active':''} key={t} onClick={()=>setTab(t)}>{t}</button>)}</div><Metrics items={[{label:'↙   Average in a month',value:'$10,919',foot:'Two salaries and drawings'},{label:'↗   Average out a month',value:'$7,662',foot:'Bills, cards and transfers'},{label:'▤   Kept each month',value:'30%',foot:'$3,258 on average'},{label:'☆   Best month',value:'Dec',foot:'$5,534 kept'}]}/>{tab==='In & out'?<div className="twocol"><MoneyChart/><BalanceChart/></div>:tab==='Spending'?<div className="twocol"><SpendingPanel/><MoneyChart/></div>:<Panel><h3>Merchants</h3><PaymentsList/></Panel>}</>}
 function Goals(){const[data,setData]=useState(pots);const[modal,setModal]=useState(false);return <><PageHead title="Goals" sub="Money set aside in pots. It stays yours — it just can’t be spent by accident." action={<button className="primary" onClick={()=>setModal(true)}><Plus size={18}/>New pot</button>}/><Metrics items={[{label:'▤   In pots',value:money(data.reduce((s,p)=>s+p.amount,0)),foot:'61% of every target together'},{label:'◷   Auto-save',value:'$1,540',foot:'on the 1st of each month'},{label:'▢   Next one',value:'Dec 1',foot:data.length+' pots'},{label:'◎   Still to save',value:'$12,253',foot:'across every pot'}]}/><div className="potgrid">{data.map((p,i)=><Panel className="pot" key={i}><div className="potvisual"><div className="potfill liquid-fill" style={{height:Math.min(100,p.amount/p.target*100)+'%',background:p.color}}><div className="water-surface"/><div className="water-shimmer"/><div className="water-bubbles"><i/><i/><i/><i/><i/></div></div><span>{p.icon==='plane'?<Plane/>:p.icon==='shield'?<Shield/>:p.icon==='monitor'?<Monitor/>:<Flame/>}</span></div><div className="potinfo"><div className="panelhead"><h3>{p.name}</h3><span className={'status '+(i===3?'behind':'')}>● {i===3?'Behind':'On track'}</span></div><h2><AnimatedValue value={money(p.amount)}/> <small>of {money(p.target)}</small></h2><p>{Math.round(p.amount/p.target*100)}% · by {p.date}</p><div className="autosave"><small>Auto-save<br/><b>every month</b></small><button onClick={()=>setData(data.map((x,j)=>j===i?{...x,monthly:Math.max(0,x.monthly-10)}:x))}>−</button><b>{money(p.monthly)}</b><button className="mint" onClick={()=>setData(data.map((x,j)=>j===i?{...x,monthly:x.monthly+10}:x))}>+</button></div><p>At {money(p.monthly)} a month you’ll have {money(p.target)} by then.</p><div className="potactions"><button className="primary" onClick={()=>setData(data.map((x,j)=>j===i?{...x,amount:x.amount+50}:x))}><Plus size={16}/>Add money</button><button className="smallbutton" onClick={()=>setData(data.map((x,j)=>j===i?{...x,amount:Math.max(0,x.amount-50)}:x))}>− &nbsp;Take out</button></div></div></Panel>)}</div>{modal&&<div className="overlay" onClick={()=>setModal(false)}><div className="dialog" onClick={e=>e.stopPropagation()}><h2>New pot</h2><input id="potname" placeholder="Pot name"/><input id="pottarget" type="number" placeholder="Target amount"/><button className="primary" onClick={()=>{const name=(document.getElementById('potname') as HTMLInputElement).value;const target=Number((document.getElementById('pottarget') as HTMLInputElement).value);if(name&&target>0){setData([...data,{name,amount:0,target,monthly:0,date:'Dec 31, 2027',color:'#65dba0',icon:'shield'}]);setModal(false)}}}>Create pot</button><button onClick={()=>setModal(false)}>Cancel</button></div></div>}</>}
 function Household(){const[allowance,setAllowance]=useState(60);const[permissions,setPermissions]=useState([false,false]);return <><PageHead title="Household" sub="3 people on the Okafor–Lindqvist account. Owners see everything; Ada sees her own card." action={<button className="primary" onClick={()=>alert('Invitation preview — no backend connected.')}><Users size={17}/>Invite someone</button>}/><div className="housegrid">{people.map((p,i)=><Panel className="person" key={p.name}><div className="personhead"><span className="avatar large" style={{background:p.color}}>{p.initials}</span><div><strong>{p.name}</strong><small>{p.email}</small></div><span className="status">● {p.role}</span></div><p>Spent in November</p><h2><AnimatedValue value={money(p.spent)}/></h2><div className="stackbar">{p.segments.map(s=><span key={s[0]} style={{background:String(s[2]),width:(Number(s[1])/p.spent*100)+'%'}}/>)}</div><div className="personlegend">{p.segments.map(s=><span key={s[0]}><i style={{background:String(s[2])}}/>{s[0]} &nbsp;<b>{money(Number(s[1]))}</b></span>)}</div><span className="cardbadge"><CreditCard size={15}/>{p.card}</span>{i===2&&<><div className="allowance"><strong>Weekly allowance</strong><p>Fridays at 5pm, onto her card</p><div className="amounts"><button onClick={()=>setAllowance(Math.max(0,allowance-10))}>−</button><b>{money(allowance)}</b><button className="mint" onClick={()=>setAllowance(allowance+10)}>+</button></div><button className="smallbutton" onClick={()=>setAllowance(allowance+20)}>＋ Top up $20</button></div>{['Can send money','Sees the joint balance'].map((x,j)=><div className="permission" key={x}><div><strong>{x}</strong><small>{j===0?'From the joint account':'Otherwise only their own card'}</small></div><button className={'switch '+(permissions[j]?'on':'')} onClick={()=>setPermissions(permissions.map((v,k)=>j===k?!v:v))}><i/></button></div>)}</>}</Panel>)}</div></>}
