@@ -119,3 +119,71 @@ button.bankcard:not(:disabled):active { transform: translateY(-2px) scale(.99); 
   .card-exit { visibility: hidden; }
   button.bankcard:hover, button.bankcard:not(:disabled):active { transform: none; }
 }
+
+/* Safe areas apply in Safari and when Verdelo opens from the Home Screen. */
+.appframe {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+@media (max-width: 1180px) {
+  .appframe { margin: 0; border: 0; border-radius: 0; min-height: 100vh; min-height: 100dvh; }
+  .appframe > .sidewrap {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 11;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform .25s, visibility .25s;
+  }
+  .appframe > .sidewrap.open { visibility: visible; transform: translateX(0); }
+  .sidebar {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    gap: 16px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
+    padding-left: max(15px, env(safe-area-inset-left));
+  }
+  .sidebar .brand { margin-bottom: 10px; }
+  .scrim { display: block; position: fixed; inset: 0; background: #0009; z-index: 10; }
+  .mobile-menu { display: grid; margin-right: auto; flex: none; }
+  .searchtop { min-width: 0; }
+  .overview-top { grid-template-columns: minmax(0, 1fr); }
+  .cards-panel { min-height: 0; }
+  .cardstage { max-width: 530px; width: 100%; margin-inline: auto; }
+  .overview-bottom > .panel { min-height: 0; }
+  .rightstack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .overview-bottom, .twocol, .potgrid, .housegrid { grid-template-columns: minmax(0, 1fr); }
+  .rightstack { display: flex; }
+  .pagehead { flex-wrap: wrap; }
+  .cardfoot > div:first-child { flex-wrap: wrap; gap: 6px; }
+  .panelhead { flex-wrap: wrap; }
+  .balance-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .topbar { height: auto; min-height: 70px; flex-wrap: wrap; padding-block: 10px; }
+  .topbar .searchtop { order: 1; flex: 1 0 100%; margin: 0; }
+  .topbar .circle, .topbar .avatar, .round, .arrows button, .smallbutton, .seg button { min-height: 44px; min-width: 44px; }
+  .searchtop input, .filtersearch input, .filters select { font-size: 16px; }
+  .tabs { flex-wrap: wrap; }
+  .cardcontrols { gap: 8px; flex-wrap: wrap; }
+  .card-face { padding: 18px; }
+  .card-face .cardnumber, .card-face .cardmeta, .card-face .chip { left: 18px; }
+  .card-face .cardnumber { bottom: 74px; font-size: clamp(14px, 4.5vw, 18px); white-space: nowrap; }
+  .card-face .cardmeta { right: 18px; bottom: 18px; gap: 14px; }
+  .card-face .chip { top: 53px; }
+  .balance-row > div:first-child > strong { font-size: clamp(31px, 9vw, 42px); }
+  .categoryrow { gap: 8px; }
+  .categoryrow b { width: auto; white-space: nowrap; }
+  .filters select { min-width: 0; max-width: 100%; }
+  .csvhint code, .import-error { overflow-wrap: anywhere; }
+  .import-stats > div { padding: 10px; min-width: 0; overflow-wrap: anywhere; }
+  .import-stats strong { font-size: clamp(16px, 5vw, 24px); }
+}
